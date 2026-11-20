@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block title %}게시물 #{{ post.id }} · 인스타 자동 게시{% endblock %}
+{% block content %}
+{% set editable = post.status in ('draft', 'approved', 'failed') %}
+<a class="back" href="{{ url_for('index', tab=('approved' if post.status == 'publishing' else post.status)) }}">← 목록으로</a>
+
+<div class="editor">
+  <section class="editor-media">
+    <div class="phone">
+      <div class="phone-head"><span class="avatar"></span><b>{{ 'test_mode' if dry_run else '내 계정' }}</b></div>
+      <div class="slides" id="slides">
+        {% for name in post.images %}
+          <img src="{{ url_for('media', filename=name) }}" alt="사진 {{ loop.index }}">
+        {% endfor %}
+      </div>
+      {% if post.images|length > 1 %}
+        <div class="dots">{% for _ in post.images %}<span></span>{% endfor %}</div>
+      {% endif %}
+      <div class="phone-caption" id="livePreview"></div>
+    </div>
+    {% if post.memo %}<p class="memo"><b>메모</b> {{ post.memo }}</p>{% endif %}
+  </section>
+
+  <section class="editor-form">
+    {% if post.status == 'failed' and post.error %}
+      <div class="flash flash-error"><b>게시 실패</b> · {{ post.error }}</div>
+    {% elif post.status == 'publishing' %}
+      <div class="flash flash-ok">지금 인스타에 올리는 중이에요. 잠시 후 새로고침하세요.</div>
+    {% elif post.status == 'published' %}
+      <div class="flash flash-ok">
+        {{ post.published_at|pretty_time }}에 게시됐어요.
+        {% if post.permalink %}<a href="{{ post.permalink }}" target="_blank" rel="noopener">인스타에서 보기 ↗</a>{% endif %}
+      </div>
+    {% elif post.status == 'approved' %}
+      <div class="flash flash-info">{{ post.scheduled_at|pretty_time }}에 자동 게시 예정이에요.</div>
+    {% endif %}
+
+    <form method="post" class="panel">
+      <label class="field">
+        <span>본문 <small class="muted" id="capCount"></small></span>
+        <textarea name="caption" id="caption" rows="10" {{ 'readonly' if not editable }}>{{ post.caption }}</textarea>
+      </label>
+      <label class="field">
+        <span>해시태그 <small class="muted" id="tagCount"></small></span>
+        <textarea name="hashtags" id="hashtags" rows="3" {{ 'readonly' if not editable }}>{{ post.hashtags }}</textarea>
+      </label>
+
+      {% if editable %}
+      <div class="ai-box">
+        <input type="text" name="instruction" placeholder="AI에게 수정 요청 (예: 더 짧게, 이모지 빼고, 신메뉴 강조)">
+        <button class="btn" name="action" value="regenerate" data-loading="다시 쓰는 중…">AI 다시 쓰기</button>
+      </div>
+
+      <label class="field">
+        <span>게시 시간</span>
+        <input type="datetime-local" name="scheduled_at" value="{{ suggested_time }}">
+        <small class="muted">설정의 기본 게시 시간 중 비어 있는 가장 가까운 시간을 골라 뒀어요.</small>
+      </label>
+
+      <div class="actions">
+        <button class="btn btn-primary" name="action" value="approve">
+          {{ '예약 시간 변경' if post.status == 'approved' else ('다시 예약' if post.status == 'failed' else '확인 완료 · 예약하기') }}
+        </button>
+        <button class="btn" name="action" value="save">저장만</button>
+        <button class="btn" name="action" value="publish_now"
+                data-confirm="지금 바로 인스타에 올릴까요?" data-loading="게시 시작 중…">지금 바로 게시</button>
+        {% if post.status == 'approved' %}
+          <button class="btn" name="action" value="unapprove">예약 취소</button>
+        {% endif %}
+        <button class="btn btn-danger" name="action" value="delete" data-confirm="이 게시물을 삭제할까요?">삭제</button>
+      </div>
+      {% elif post.status == 'published' %}
+      <div class="actions">
+        <button class="btn btn-danger" name="action" value="delete"
+                data-confirm="대시보드 기록만 지워지고 인스타 글은 남아요. 삭제할까요?">기록 삭제</button>
+      </div>
+      {% endif %}
+    </form>
+  </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  var cap = document.getElementById('caption');
+  var tags = document.getElementById('hashtags');
+  var preview = document.getElementById('livePreview');
+  function escapeHtml(s) { return s.replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function update() {
+    var full = cap.value.trim() + (tags.value.trim() ? '\n\n' + tags.value.trim() : '');
+    var tagN = (tags.value.match(/#[^\s#]+/g) || []).length;
+    document.getElementById('capCount').textContent = full.length + ' / 2200자';
+    document.getElementById('capCount').className = full.length > 2200 ? 'over' : 'muted';
+    document.getElementById('tagCount').textContent = tagN + ' / 30개';
+    document.getElementById('tagCount').className = tagN > 30 ? 'over' : 'muted';
+    preview.innerHTML = escapeHtml(full).replace(/(#[^\s#]+)/g, '<span class="tag">$1</span>');
+  }
+  cap.addEventListener('input', update);
+  tags.addEventListener('input', update);
+  update();
+
+  var slides = document.getElementById('slides');
+  var dots = document.querySelectorAll('.dots span');
+  function markDot() {
+    var i = Math.round(slides.scrollLeft / slides.clientWidth);
+    dots.forEach(function (d, j) { d.className = i === j ? 'on' : ''; });
+  }
+  if (dots.length) { slides.addEventListener('scroll', markDot); markDot(); }
+</script>
+{% endblock %}

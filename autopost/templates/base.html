@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}인스타 자동 게시{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header class="topbar">
+    <a class="logo" href="{{ url_for('index') }}"><span class="logo-mark"></span><span class="logo-text">인스타 자동 게시</span></a>
+    <nav>
+      <a href="{{ url_for('index') }}" class="{{ 'active' if request.endpoint in ('index', 'edit_post') }}">게시물</a>
+      <a href="{{ url_for('comments') }}" class="{{ 'active' if request.endpoint == 'comments' }}">댓글</a>
+      <a href="{{ url_for('settings') }}" class="{{ 'active' if request.endpoint == 'settings' }}">설정</a>
+      <a href="{{ url_for('new_post') }}" class="btn btn-primary btn-sm">+ 새 게시물</a>
+    </nav>
+  </header>
+
+  {% if dry_run %}
+  <div class="banner">
+    <strong>테스트 모드</strong> · 인스타에 실제로 올라가지 않아요.
+    <a href="{{ url_for('settings') }}">연결 방법 보기</a>
+  </div>
+  {% endif %}
+
+  <main class="container">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for category, message in messages %}
+        <div class="flash flash-{{ category }}">{{ message }}</div>
+      {% endfor %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+  </main>
+
+  <script>
+    // 오래 걸리는 버튼(AI 작성, 게시)은 눌렀을 때 로딩 표시
+    document.querySelectorAll('form').forEach(function (form) {
+      form.addEventListener('submit', function (e) {
+        var btn = e.submitter;
+        if (btn && btn.dataset.confirm && !confirm(btn.dataset.confirm)) { e.preventDefault(); return; }
+        if (btn && btn.dataset.loading) {
+          setTimeout(function () { btn.disabled = true; btn.textContent = btn.dataset.loading; }, 0);
+        }
+      });
+    });
+  </script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

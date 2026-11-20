@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="tabs">
+  {% for key, label in STATUS_LABELS.items() %}
+    <a href="{{ url_for('index', tab=key) }}" class="tab {{ 'active' if tab == key }}">
+      {{ label }} <span class="count">{{ counts.get(key, 0) }}</span>
+    </a>
+  {% endfor %}
+</div>
+
+{% if not posts %}
+  <div class="empty">
+    {% if tab == 'draft' %}
+      <p>검토할 초안이 없어요.</p>
+      <a class="btn btn-primary" href="{{ url_for('new_post') }}">사진 올리고 AI 초안 만들기</a>
+    {% elif tab == 'approved' %}
+      <p>예약된 게시물이 없어요. 초안을 검토하고 예약해 보세요.</p>
+    {% elif tab == 'published' %}
+      <p>아직 게시된 글이 없어요.</p>
+    {% else %}
+      <p>실패한 게시물이 없어요.</p>
+    {% endif %}
+  </div>
+{% else %}
+<div class="grid">
+  {% for post in posts %}
+  <a class="card" href="{{ url_for('edit_post', post_id=post.id) }}">
+    <div class="thumb">
+      <img src="{{ url_for('media', filename=post.images[0]) }}" alt="">
+      {% if post.images|length > 1 %}<span class="badge-count">1/{{ post.images|length }}</span>{% endif %}
+      {% if post.status == 'publishing' %}<span class="badge-status">게시 중…</span>{% endif %}
+    </div>
+    <div class="card-body">
+      {% if post.status == 'approved' or post.status == 'publishing' %}
+        <div class="pill pill-blue">{{ post.scheduled_at|pretty_time }} 게시 예정</div>
+      {% elif post.status == 'published' %}
+        <div class="pill pill-green">{{ post.published_at|pretty_time }} 게시됨</div>
+      {% elif post.status == 'failed' %}
+        <div class="pill pill-red">게시 실패</div>
+      {% else %}
+        <div class="pill">{{ post.created_at|pretty_time }} 작성</div>
+      {% endif %}
+      <p class="excerpt">{{ (post.caption or post.memo or '(본문 없음)')|truncate(90) }}</p>
+      {% if post.status == 'failed' and post.error %}
+        <p class="error-text">{{ post.error|truncate(120) }}</p>
+      {% endif %}
+      {% if post.status == 'published' %}
+        <div class="stats" data-stats-url="{{ url_for('api_stats', post_id=post.id) }}">반응 불러오는 중…</div>
+      {% endif %}
+    </div>
+  </a>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+  var LABELS = { likes: '좋아요', comments: '댓글', reach: '도달', saved: '저장', shares: '공유', views: '조회' };
+  document.querySelectorAll('[data-stats-url]').forEach(function (el) {
+    fetch(el.dataset.statsUrl).then(function (r) { return r.json(); }).then(function (data) {
+      if (data.error) { el.textContent = '반응을 불러오지 못했어요'; return; }
+      el.innerHTML = Object.keys(LABELS).filter(function (k) { return data[k] != null; })
+        .map(function (k) { return '<span><b>' + data[k] + '</b> ' + LABELS[k] + '</span>'; }).join('');
+    }).catch(function () { el.textContent = ''; });
+  });
+</script>
+{% endblock %}

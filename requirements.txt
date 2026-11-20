@@ -1,0 +1,7 @@
+anthropic>=1.0
+flask>=3.0
+pillow>=11.0
+pillow-heif>=0.20
+requests>=2.32
+python-dotenv>=1.0
+pydantic>=2.7

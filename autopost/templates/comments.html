@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}댓글 · 인스타 자동 게시{% endblock %}
+{% block content %}
+<h1>댓글 관리</h1>
+<p class="muted">최근 게시물 10개의 댓글이에요. 답글이 없는 댓글이 위로 와요.</p>
+
+{% if not items %}
+  <div class="empty"><p>아직 댓글이 달린 게시물이 없어요.</p></div>
+{% endif %}
+
+{% for item in items %}
+<section class="panel comment-group">
+  <header class="comment-media">
+    <img src="{{ item.media.media_url or item.media.thumbnail_url }}" alt="">
+    <div>
+      <p class="excerpt">{{ (item.media.caption or '')|truncate(80) }}</p>
+      <small class="muted">
+        {% if item.unanswered %}<b class="over">답글 대기 {{ item.unanswered }}개</b> · {% endif %}
+        댓글 {{ item.comments|length }}개
+        {% if item.media.permalink %} · <a href="{{ item.media.permalink }}" target="_blank" rel="noopener">인스타에서 보기 ↗</a>{% endif %}
+      </small>
+    </div>
+  </header>
+
+  {% for c in item.comments %}
+  <div class="comment {{ 'answered' if c.answered }}">
+    <p><b>@{{ c.username }}</b> {{ c.text }}</p>
+    {% for r in c.replies %}
+      <p class="reply"><b>@{{ r.username }}</b> {{ r.text }}</p>
+    {% endfor %}
+    {% if not c.answered %}
+    <form method="post" action="{{ url_for('reply_comment', comment_id=c.id) }}" class="reply-form">
+      <textarea name="message" rows="2" placeholder="답글 입력"></textarea>
+      <div class="actions">
+        <button type="button" class="btn btn-sm js-suggest"
+                data-text="{{ c.text }}" data-username="{{ c.username }}"
+                data-caption="{{ (item.media.caption or '')[:600] }}">AI 답글 제안</button>
+        <button class="btn btn-primary btn-sm" data-loading="다는 중…">답글 달기</button>
+      </div>
+    </form>
+    {% endif %}
+  </div>
+  {% endfor %}
+</section>
+{% endfor %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+  document.querySelectorAll('.js-suggest').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var box = btn.closest('form').querySelector('textarea');
+      var label = btn.textContent;
+      btn.disabled = true; btn.textContent = '작성 중…';
+      fetch('{{ url_for("api_suggest_reply") }}', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: btn.dataset.text, username: btn.dataset.username, caption: btn.dataset.caption })
+      }).then(function (r) { return r.json(); }).then(function (data) {
+        if (data.error) { alert(data.error); } else { box.value = data.reply; box.focus(); }
+      }).catch(function () { alert('AI 제안을 받지 못했어요.'); })
+        .finally(function () { btn.disabled = false; btn.textContent = label; });
+    });
+  });
+</script>
+{% endblock %}

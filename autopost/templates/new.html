@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}새 게시물 · 인스타 자동 게시{% endblock %}
+{% block content %}
+<h1>새 게시물</h1>
+<p class="muted">사진과 짧은 메모만 주시면 AI가 캡션과 해시태그를 써요. 올리기 전에 꼭 확인하는 단계가 있어요.</p>
+
+<form method="post" enctype="multipart/form-data" class="panel">
+  <label class="field">
+    <span>사진 (최대 {{ max_photos }}장, 여러 장이면 슬라이드로 올라가요)</span>
+    <input type="file" name="photos" id="photos" accept="image/*,.heic,.heif" multiple required>
+  </label>
+  <div id="preview" class="preview"></div>
+
+  <label class="field">
+    <span>메모 (선택)</span>
+    <textarea name="memo" rows="3" placeholder="예: 오늘부터 딸기라떼 시작! 생딸기 듬뿍, 6,500원. 이번 주 한정"></textarea>
+    <small class="muted">메뉴 이름, 가격, 이벤트처럼 사진만으로는 모르는 사실을 적어 주세요. AI는 적힌 내용만 씁니다.</small>
+  </label>
+
+  <button class="btn btn-primary btn-lg" type="submit" data-loading="AI가 글을 쓰는 중… (10~30초)">AI 초안 만들기</button>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  var input = document.getElementById('photos');
+  var preview = document.getElementById('preview');
+  input.addEventListener('change', function () {
+    preview.innerHTML = '';
+    Array.prototype.slice.call(input.files, 0, {{ max_photos }}).forEach(function (file, i) {
+      var box = document.createElement('div');
+      box.className = 'preview-item';
+      if (/^image\/(jpeg|png|webp|gif)$/.test(file.type)) {
+        var img = document.createElement('img');
+        img.src = URL.createObjectURL(file);
+        box.appendChild(img);
+      } else {
+        box.textContent = file.name;
+      }
+      if (i === 0) { var tag = document.createElement('span'); tag.textContent = '대표'; box.appendChild(tag); }
+      preview.appendChild(box);
+    });
+  });
+</script>
+{% endblock %}

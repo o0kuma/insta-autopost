@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}설정 · 인스타 자동 게시{% endblock %}
+{% block content %}
+<h1>설정</h1>
+
+<section class="panel">
+  <h2>연결 상태</h2>
+  <ul class="status-list">
+    <li>
+      <span class="dot {{ 'ok' if status.claude else 'warn' }}"></span>
+      <b>Claude (글쓰기 AI)</b>
+      {% if status.claude %}API 키 설정됨 · 모델 {{ model }}{% else %}.env에 ANTHROPIC_API_KEY가 없어요{% endif %}
+    </li>
+    <li>
+      {% if status.ig_dry_run %}
+        <span class="dot warn"></span><b>Instagram</b> 테스트 모드 (IG_ACCESS_TOKEN 없음 또는 DRY_RUN=1)
+      {% elif status.ig_error %}
+        <span class="dot bad"></span><b>Instagram</b> 연결 실패: {{ status.ig_error }}
+      {% else %}
+        <span class="dot ok"></span><b>Instagram</b> @{{ status.ig_username }} 연결됨
+        {% if status.ig_limit and status.ig_limit.total %} · 최근 24시간 API 게시 {{ status.ig_limit.used }}/{{ status.ig_limit.total }}{% endif %}
+      {% endif %}
+    </li>
+    <li>
+      <span class="dot {{ 'ok' if status.cloudinary else 'warn' }}"></span>
+      <b>Cloudinary (사진 공개 URL)</b>
+      {% if status.cloudinary %}설정됨{% else %}설정 안 됨 · 실제 게시할 때 필요해요{% endif %}
+    </li>
+  </ul>
+  <p class="muted">키와 토큰은 프로그램 폴더의 <code>.env</code> 파일에서 바꾸고, 앱을 다시 실행하면 적용돼요. 자세한 방법은 README를 보세요.</p>
+</section>
+
+<form method="post" class="panel">
+  <h2>가게 정보 <small class="muted">AI가 글을 쓸 때 참고해요</small></h2>
+  <div class="form-grid">
+    <label class="field"><span>가게 이름</span><input name="business_name" value="{{ brand.business_name }}"></label>
+    <label class="field"><span>업종</span><input name="industry" value="{{ brand.industry }}"></label>
+    <label class="field"><span>위치</span><input name="location" value="{{ brand.location }}"></label>
+    <label class="field"><span>이모지 사용</span><input name="emoji" value="{{ brand.emoji }}"></label>
+  </div>
+  <label class="field"><span>말투</span><input name="tone" value="{{ brand.tone }}"></label>
+  <label class="field"><span>안내 문구 (영업시간, 예약 방법 등)</span><input name="call_to_action" value="{{ brand.call_to_action }}"></label>
+  <label class="field"><span>피할 것</span><input name="avoid" value="{{ brand.avoid }}"></label>
+  <div class="form-grid">
+    <label class="field"><span>항상 넣을 해시태그</span><input name="fixed_hashtags" value="{{ brand.fixed_hashtags|join(' ') }}"></label>
+    <label class="field"><span>해시태그 최대 개수 (30 이하)</span><input type="number" name="max_hashtags" min="0" max="30" value="{{ brand.max_hashtags }}"></label>
+    <label class="field"><span>기본 게시 시간 (쉼표로 구분)</span><input name="posting_times" value="{{ brand.posting_times|join(', ') }}" placeholder="12:00, 19:00"></label>
+    <label class="field"><span>사진 비율이 안 맞을 때</span>
+      <select name="image_fit">
+        <option value="crop" {{ 'selected' if brand.image_fit != 'pad' }}>가운데 기준으로 자르기</option>
+        <option value="pad" {{ 'selected' if brand.image_fit == 'pad' }}>흰 여백 넣기</option>
+      </select>
+    </label>
+  </div>
+  <button class="btn btn-primary">저장</button>
+</form>
+{% endblock %}
