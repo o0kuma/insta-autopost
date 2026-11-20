@@ -13,7 +13,7 @@ log = logging.getLogger("autopost")
 def next_free_slot(brand: dict) -> str:
     """brand.json의 게시 시간 중 아직 예약이 없는 가장 가까운 시간."""
     taken = db.taken_slots()
-    earliest = datetime.now() + timedelta(minutes=5)
+    earliest = db.now() + timedelta(minutes=5)
     times = []
     for t in brand.get("posting_times", []):
         try:
@@ -44,7 +44,7 @@ def publish(post_id: int) -> None:
         if client.dry_run:
             urls = [f"test://{name}" for name in post["images"]]
         else:
-            urls = [hosting.upload_image(config.PROCESSED_DIR / name) for name in post["images"]]
+            urls = [hosting.public_url(config.PROCESSED_DIR / name) for name in post["images"]]
         result = client.publish_post(urls, caption)
         db.update_post(
             post_id, status="published", published_at=db.now_str(),

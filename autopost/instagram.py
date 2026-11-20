@@ -1,4 +1,5 @@
-"""Instagram API (Instagram 로그인 방식) 클라이언트와, 토큰이 없을 때 쓰는 테스트용 가짜 클라이언트.
+"""Instagram API (Instagram 로그인 방식) 클라이언트, '인스타 연결' 버튼용 OAuth,
+그리고 토큰이 없을 때 쓰는 테스트용 가짜 클라이언트.
 
 필요 권한: instagram_business_basic, instagram_business_content_publish,
           instagram_business_manage_comments, instagram_business_manage_insights
@@ -6,12 +7,21 @@
 import hashlib
 import time
 from datetime import datetime, timedelta
+from urllib.parse import urlencode
 
 import requests
 
 from . import config, db
 
 GRAPH_HOST = "https://graph.instagram.com"
+AUTHORIZE_URL = "https://www.instagram.com/oauth/authorize"
+SHORT_TOKEN_URL = "https://api.instagram.com/oauth/access_token"
+SCOPES = [
+    "instagram_business_basic",
+    "instagram_business_content_publish",
+    "instagram_business_manage_comments",
+    "instagram_business_manage_insights",
+]
 TOKEN_REFRESH_EVERY = timedelta(days=7)  # 장기 토큰은 60일 유효. 1주마다 갱신.
 
 
@@ -19,17 +29,56 @@ class InstagramError(Exception):
     pass
 
 
+def _parse(resp: requests.Response) -> dict:
+    """인스타 API 응답을 dict로. 두 가지 오류 형식을 모두 사람이 읽을 메시지로 바꾼다."""
+    try:
+        data = resp.json()
+    except ValueError:
+        data = {}
+    if resp.status_code >= 400 or "error" in data or "error_message" in data:
+        err = data.get("error") if isinstance(data.get("error"), dict) else {}
+        msg = (err.get("error_user_msg") or err.get("message") or data.get("error_message")
+               or resp.text[:200])
+        code = err.get("code") or data.get("code") or resp.status_code
+        raise InstagramError(f"{msg} (code {code})")
+    return data
+
+
 # ---------------------------------------------------------------- 토큰 관리
+# 토큰 출처(ig_token_source): "oauth" = 연결 버튼으로 받은 토큰, "env:<해시>" = .env에 직접 넣은 토큰
 def _hash(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
+def _env_source() -> str:
+    return "env:" + _hash(config.IG_ACCESS_TOKEN) if config.IG_ACCESS_TOKEN else ""
+
+
+def token_source() -> str:
+    return db.get_setting("ig_token_source") or ""
+
+
 def get_token() -> str:
-    """.env 토큰이 새로 바뀌었으면 그걸 쓰고, 아니면 앱이 갱신해 둔 토큰을 쓴다."""
-    env_token = config.IG_ACCESS_TOKEN
-    if env_token and db.get_setting("ig_token_env_hash") != _hash(env_token):
-        return env_token
-    return db.get_setting("ig_access_token") or env_token
+    stored = db.get_setting("ig_access_token") or ""
+    source = token_source()
+    if source == "oauth" and stored:
+        return stored
+    if config.IG_ACCESS_TOKEN and source != _env_source():
+        return config.IG_ACCESS_TOKEN  # .env에 새 토큰을 넣었으면 그걸 우선
+    return stored or config.IG_ACCESS_TOKEN
+
+
+def save_token(token: str, source: str, username: str = "") -> None:
+    db.set_setting("ig_access_token", token)
+    db.set_setting("ig_token_source", source)
+    db.set_setting("ig_token_refreshed_at", datetime.now().isoformat(timespec="seconds"))
+    if username:
+        db.set_setting("ig_username", username)
+
+
+def disconnect() -> None:
+    for key in ("ig_access_token", "ig_token_source", "ig_username", "ig_token_refreshed_at"):
+        db.set_setting(key, "")
 
 
 def is_dry_run() -> bool:
@@ -40,21 +89,70 @@ def maybe_refresh_token() -> str | None:
     """마지막 갱신 후 7일이 지났으면 토큰을 갱신한다. 결과 메시지를 돌려준다."""
     if is_dry_run():
         return None
-    token = get_token()
-    env_hash = _hash(config.IG_ACCESS_TOKEN) if config.IG_ACCESS_TOKEN else ""
-    if db.get_setting("ig_token_env_hash") != env_hash:
-        # 새 토큰을 처음 본 시점 기록 (갓 발급된 토큰은 24시간이 지나야 갱신 가능)
-        db.set_setting("ig_access_token", token)
-        db.set_setting("ig_token_env_hash", env_hash)
-        db.set_setting("ig_token_refreshed_at", datetime.now().isoformat(timespec="seconds"))
+    source = token_source()
+    if source != "oauth" and config.IG_ACCESS_TOKEN and source != _env_source():
+        # .env의 새 토큰을 처음 본 시점 기록 (갓 발급된 토큰은 24시간이 지나야 갱신 가능)
+        save_token(config.IG_ACCESS_TOKEN, _env_source())
         return None
     last = db.get_setting("ig_token_refreshed_at")
     if last and datetime.now() - datetime.fromisoformat(last) < TOKEN_REFRESH_EVERY:
         return None
-    new_token = InstagramClient(token).refresh_token()
+    new_token = InstagramClient(get_token()).refresh_token()
     db.set_setting("ig_access_token", new_token)
     db.set_setting("ig_token_refreshed_at", datetime.now().isoformat(timespec="seconds"))
     return "인스타 토큰을 갱신했어요."
+
+
+# ---------------------------------------------------------------- '인스타 연결' 버튼 (OAuth)
+def oauth_configured() -> bool:
+    return bool(config.IG_APP_ID and config.IG_APP_SECRET)
+
+
+def oauth_redirect_uri() -> str:
+    """Meta 앱 설정의 'OAuth 리디렉션 URI'에 똑같이 등록해야 하는 주소."""
+    return f"{config.PUBLIC_BASE_URL}/instagram/callback" if config.PUBLIC_BASE_URL else ""
+
+
+def build_authorize_url(redirect_uri: str, state: str) -> str:
+    params = {
+        "client_id": config.IG_APP_ID,
+        "redirect_uri": redirect_uri,
+        "response_type": "code",
+        "scope": ",".join(SCOPES),
+        "state": state,
+    }
+    return f"{AUTHORIZE_URL}?{urlencode(params)}"
+
+
+def exchange_code(code: str, redirect_uri: str) -> str:
+    """인가 코드 → 단기 토큰(1시간) → 장기 토큰(60일)."""
+    code = code.split("#")[0]  # 인스타가 붙이는 '#_'는 코드가 아님
+    try:
+        short = _parse(requests.post(SHORT_TOKEN_URL, data={
+            "client_id": config.IG_APP_ID,
+            "client_secret": config.IG_APP_SECRET,
+            "grant_type": "authorization_code",
+            "redirect_uri": redirect_uri,
+            "code": code,
+        }, timeout=30))
+        item = short["data"][0] if isinstance(short.get("data"), list) else short
+        long_lived = _parse(requests.get(f"{GRAPH_HOST}/access_token", params={
+            "grant_type": "ig_exchange_token",
+            "client_secret": config.IG_APP_SECRET,
+            "access_token": item["access_token"],
+        }, timeout=30))
+    except requests.RequestException as e:
+        raise InstagramError(f"인스타 서버에 연결하지 못했어요: {e}") from e
+    except (KeyError, IndexError) as e:
+        raise InstagramError("인스타 응답에 토큰이 없어요. 다시 시도하세요.") from e
+    return long_lived["access_token"]
+
+
+def connect_with_code(code: str, redirect_uri: str) -> str:
+    token = exchange_code(code, redirect_uri)
+    username = InstagramClient(token).username
+    save_token(token, "oauth", username)
+    return username
 
 
 # ---------------------------------------------------------------- 실제 클라이언트
@@ -76,15 +174,7 @@ class InstagramClient:
                 resp = requests.post(url, data=params, timeout=60)
         except requests.RequestException as e:
             raise InstagramError(f"인스타 서버에 연결하지 못했어요: {e}") from e
-        try:
-            data = resp.json()
-        except ValueError:
-            data = {}
-        if resp.status_code >= 400 or "error" in data:
-            err = data.get("error", {})
-            msg = err.get("error_user_msg") or err.get("message") or resp.text[:200]
-            raise InstagramError(f"{msg} (code {err.get('code', resp.status_code)})")
-        return data
+        return _parse(resp)
 
     # --- 계정
     def me(self) -> dict:

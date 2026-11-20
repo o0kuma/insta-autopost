@@ -1,0 +1,31 @@
+# Render Blueprint: Render 대시보드 → New → Blueprint → 이 저장소를 고르면 아래대로 만들어져요.
+# 무료 인스턴스는 15분 동안 접속이 없으면 잠들고 영구 디스크도 못 써서, 예약 게시를 하려면 유료 인스턴스가 필요해요.
+services:
+  - type: web
+    name: insta-autopost
+    runtime: docker
+    plan: starter            # 가장 작은 유료 인스턴스 (0.5 CPU, 512MB)
+    region: singapore        # 한국에서 가장 가까운 지역
+    healthCheckPath: /healthz
+    autoDeployTrigger: commit
+    disk:
+      name: data
+      mountPath: /var/data   # 사진·DB·가게 정보가 여기에 저장돼 재배포해도 유지됨
+      sizeGB: 1
+    envVars:
+      - key: DASHBOARD_PASSWORD   # 친구분이 로그인할 비밀번호
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: IG_APP_ID
+        sync: false
+      - key: IG_APP_SECRET
+        sync: false
+      - key: FLASK_SECRET_KEY
+        generateValue: true
+      - key: DATA_DIR
+        value: /var/data
+      - key: TIMEZONE
+        value: Asia/Seoul
+      - key: PORT
+        value: "10000"

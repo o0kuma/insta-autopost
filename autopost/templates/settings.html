@@ -4,33 +4,74 @@
 <h1>설정</h1>
 
 <section class="panel">
-  <h2>연결 상태</h2>
+  <h2>인스타그램 연결</h2>
+  {% if status.ig_dry_run %}
+    <p><span class="dot warn"></span>아직 연결되지 않았어요. 지금은 <b>테스트 모드</b>라 실제로 게시되지 않아요.</p>
+  {% elif status.ig_error %}
+    <p><span class="dot bad"></span>연결에 문제가 있어요: {{ status.ig_error }}</p>
+    <p class="muted">토큰이 만료됐을 수 있어요. 아래 버튼으로 다시 연결해 주세요.</p>
+  {% else %}
+    <p><span class="dot ok"></span><b>@{{ status.ig_username }}</b> 계정에 게시돼요.
+      {% if status.ig_limit and status.ig_limit.total %}
+        <span class="muted">· 최근 24시간 API 게시 {{ status.ig_limit.used }}/{{ status.ig_limit.total }}</span>
+      {% endif %}
+    </p>
+  {% endif %}
+
+  <div class="actions">
+    {% if status.oauth_ready %}
+      <form method="post" action="{{ url_for('instagram_connect') }}">
+        <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+        <button class="btn btn-primary">{{ '다른 계정으로 다시 연결' if not status.ig_dry_run else '인스타 연결하기' }}</button>
+      </form>
+    {% endif %}
+    {% if status.ig_source == 'oauth' and not status.ig_dry_run %}
+      <form method="post" action="{{ url_for('instagram_disconnect') }}">
+        <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+        <button class="btn btn-danger" data-confirm="인스타 연결을 해제할까요? 예약된 글이 게시되지 않아요.">연결 해제</button>
+      </form>
+    {% endif %}
+  </div>
+
+  {% if not status.oauth_ready %}
+    <p class="muted small">
+      {% if not status.oauth_configured %}
+        '인스타 연결하기' 버튼을 쓰려면 서버에 IG_APP_ID, IG_APP_SECRET을 설정해야 해요.
+      {% else %}
+        '인스타 연결하기' 버튼은 클라우드처럼 공개 주소(https)가 있는 곳에서만 동작해요. 이 PC에서는 .env의 IG_ACCESS_TOKEN을 쓰세요.
+      {% endif %}
+    </p>
+  {% endif %}
+  {% if status.redirect_uri %}
+    <details class="small">
+      <summary>설치한 사람용: Meta 앱에 등록할 리디렉션 주소</summary>
+      <p>Meta 앱 → Instagram → Instagram 로그인을 통한 API 설정 → 비즈니스 로그인 설정 → OAuth 리디렉션 URI에 아래 주소를 그대로 넣으세요.</p>
+      <code class="copy">{{ status.redirect_uri }}</code>
+    </details>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <h2>그 밖의 연결 상태</h2>
   <ul class="status-list">
     <li>
       <span class="dot {{ 'ok' if status.claude else 'warn' }}"></span>
       <b>Claude (글쓰기 AI)</b>
-      {% if status.claude %}API 키 설정됨 · 모델 {{ model }}{% else %}.env에 ANTHROPIC_API_KEY가 없어요{% endif %}
+      {% if status.claude %}API 키 설정됨 · 모델 {{ model }}{% else %}ANTHROPIC_API_KEY가 없어요 (AI 초안 대신 메모가 그대로 들어가요){% endif %}
     </li>
     <li>
-      {% if status.ig_dry_run %}
-        <span class="dot warn"></span><b>Instagram</b> 테스트 모드 (IG_ACCESS_TOKEN 없음 또는 DRY_RUN=1)
-      {% elif status.ig_error %}
-        <span class="dot bad"></span><b>Instagram</b> 연결 실패: {{ status.ig_error }}
-      {% else %}
-        <span class="dot ok"></span><b>Instagram</b> @{{ status.ig_username }} 연결됨
-        {% if status.ig_limit and status.ig_limit.total %} · 최근 24시간 API 게시 {{ status.ig_limit.used }}/{{ status.ig_limit.total }}{% endif %}
-      {% endif %}
+      <span class="dot {{ 'warn' if status.hosting == 'none' else 'ok' }}"></span>
+      <b>사진 공개 주소</b>
+      {% if status.hosting == 'self' %}이 서버가 직접 제공
+      {% elif status.hosting == 'cloudinary' %}Cloudinary
+      {% else %}없음 · 실제 게시하려면 클라우드 배포나 Cloudinary 설정이 필요해요{% endif %}
     </li>
-    <li>
-      <span class="dot {{ 'ok' if status.cloudinary else 'warn' }}"></span>
-      <b>Cloudinary (사진 공개 URL)</b>
-      {% if status.cloudinary %}설정됨{% else %}설정 안 됨 · 실제 게시할 때 필요해요{% endif %}
-    </li>
+    <li><span class="dot ok"></span><b>시간대</b> {{ timezone }} 기준으로 예약해요</li>
   </ul>
-  <p class="muted">키와 토큰은 프로그램 폴더의 <code>.env</code> 파일에서 바꾸고, 앱을 다시 실행하면 적용돼요. 자세한 방법은 README를 보세요.</p>
 </section>
 
 <form method="post" class="panel">
+  <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
   <h2>가게 정보 <small class="muted">AI가 글을 쓸 때 참고해요</small></h2>
   <div class="form-grid">
     <label class="field"><span>가게 이름</span><input name="business_name" value="{{ brand.business_name }}"></label>
@@ -54,4 +95,11 @@
   </div>
   <button class="btn btn-primary">저장</button>
 </form>
+
+{% if login_enabled %}
+<form method="post" action="{{ url_for('logout') }}" class="logout">
+  <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+  <button class="btn btn-sm">로그아웃</button>
+</form>
+{% endif %}
 {% endblock %}

@@ -30,6 +30,7 @@
     {% endfor %}
     {% if not c.answered %}
     <form method="post" action="{{ url_for('reply_comment', comment_id=c.id) }}" class="reply-form">
+      <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
       <textarea name="message" rows="2" placeholder="답글 입력"></textarea>
       <div class="actions">
         <button type="button" class="btn btn-sm js-suggest"
@@ -53,7 +54,9 @@
       var label = btn.textContent;
       btn.disabled = true; btn.textContent = '작성 중…';
       fetch('{{ url_for("api_suggest_reply") }}', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json',
+                   'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content },
         body: JSON.stringify({ text: btn.dataset.text, username: btn.dataset.username, caption: btn.dataset.caption })
       }).then(function (r) { return r.json(); }).then(function (data) {
         if (data.error) { alert(data.error); } else { box.value = data.reply; box.focus(); }

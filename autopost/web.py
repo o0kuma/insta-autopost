@@ -1,14 +1,18 @@
-"""사장님이 브라우저로 쓰는 대시보드 (Flask)."""
+"""사장님이 브라우저(폰 포함)로 쓰는 대시보드 (Flask)."""
+import hmac
 import os
 import re
+import secrets
+import time
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from flask import (Flask, abort, flash, jsonify, redirect, render_template,
-                   request, send_from_directory, url_for)
+                   request, send_from_directory, session, url_for)
+from werkzeug.middleware.proxy_fix import ProxyFix
 
-from . import ai, config, db, images, instagram, publisher
+from . import ai, config, db, hosting, images, instagram, publisher
 
 MAX_PHOTOS = 10
 STATUS_LABELS = {
@@ -18,6 +22,10 @@ STATUS_LABELS = {
     "failed": "실패",
 }
 WEEKDAYS = "월화수목금토일"
+# 로그인 없이 열리는 주소: 로그인 화면, 정적 파일, 상태 확인, 인스타가 사진을 가져가는 주소
+PUBLIC_ENDPOINTS = {"login", "static", "healthz", "public_media"}
+LOGIN_MAX_FAILS = 5
+LOGIN_BLOCK_SECONDS = 600
 
 
 def pretty_time(value: str | None) -> str:
@@ -30,18 +38,102 @@ def pretty_time(value: str | None) -> str:
     return f"{dt.month}/{dt.day}({WEEKDAYS[dt.weekday()]}) {dt:%H:%M}"
 
 
+def csrf_token() -> str:
+    if "csrf" not in session:
+        session["csrf"] = secrets.token_urlsafe(32)
+    return session["csrf"]
+
+
 def create_app() -> Flask:
     db.init_db()
     app = Flask(__name__)
     app.secret_key = config.SECRET_KEY
-    app.config["MAX_CONTENT_LENGTH"] = 200 * 1024 * 1024
+    app.config.update(
+        MAX_CONTENT_LENGTH=200 * 1024 * 1024,
+        PERMANENT_SESSION_LIFETIME=timedelta(days=30),  # 폰에서 한 달간 로그인 유지
+        SESSION_COOKIE_SAMESITE="Lax",
+        SESSION_COOKIE_HTTPONLY=True,
+        SESSION_COOKIE_SECURE=config.PUBLIC_BASE_URL.startswith("https://"),
+    )
+    if config.TRUST_PROXY:
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
     app.jinja_env.filters["pretty_time"] = pretty_time
+    app.jinja_env.globals["csrf_token"] = csrf_token
+    failed_logins: dict[str, list[float]] = {}
+
+    # ------------------------------------------------------------ 로그인 / 보안
+    @app.before_request
+    def require_login():
+        if request.endpoint in PUBLIC_ENDPOINTS or request.endpoint is None:
+            return None
+        if not config.DASHBOARD_PASSWORD or session.get("auth"):
+            return None
+        if request.path.startswith("/api/"):
+            return jsonify(error="로그인이 필요해요. 페이지를 새로고침하세요."), 401
+        nxt = request.full_path if request.method == "GET" else None
+        return redirect(url_for("login", next=nxt))
+
+    @app.before_request
+    def check_csrf():
+        if request.method != "POST":
+            return None
+        expected = session.get("csrf")
+        sent = request.form.get("_csrf") or request.headers.get("X-CSRF-Token") or ""
+        if not expected or not hmac.compare_digest(expected, sent):
+            if request.path.startswith("/api/"):
+                return jsonify(error="보안 토큰이 만료됐어요. 페이지를 새로고침하세요."), 400
+            flash("보안 토큰이 만료됐어요. 다시 시도해 주세요.", "error")
+            return redirect(request.referrer or url_for("index"))
+        return None
 
     @app.context_processor
     def inject_globals():
         counts = db.count_by_status()
         counts["approved"] = counts.get("approved", 0) + counts.get("publishing", 0)
-        return {"dry_run": instagram.is_dry_run(), "counts": counts, "STATUS_LABELS": STATUS_LABELS}
+        return {"dry_run": instagram.is_dry_run(), "counts": counts,
+                "STATUS_LABELS": STATUS_LABELS, "login_enabled": bool(config.DASHBOARD_PASSWORD)}
+
+    @app.route("/login", methods=["GET", "POST"])
+    def login():
+        if not config.DASHBOARD_PASSWORD:
+            return redirect(url_for("index"))
+        if request.method == "POST":
+            ip = request.remote_addr or "?"
+            now = time.time()
+            recent = [t for t in failed_logins.get(ip, []) if now - t < LOGIN_BLOCK_SECONDS]
+            if len(recent) >= LOGIN_MAX_FAILS:
+                flash("비밀번호를 여러 번 틀렸어요. 10분 뒤에 다시 시도하세요.", "error")
+                return render_template("login.html"), 429
+            password = request.form.get("password", "")
+            if hmac.compare_digest(password.encode(), config.DASHBOARD_PASSWORD.encode()):
+                session.clear()
+                session.permanent = True
+                session["auth"] = True
+                failed_logins.pop(ip, None)
+                nxt = request.args.get("next") or ""
+                if not nxt.startswith("/") or nxt.startswith("//"):
+                    nxt = url_for("index")
+                return redirect(nxt)
+            recent.append(now)
+            failed_logins[ip] = recent
+            flash("비밀번호가 맞지 않아요.", "error")
+        return render_template("login.html")
+
+    @app.post("/logout")
+    def logout():
+        session.clear()
+        return redirect(url_for("login"))
+
+    @app.get("/healthz")
+    def healthz():
+        return "ok"
+
+    @app.get("/p/<filename>")
+    def public_media(filename):
+        """인스타가 게시할 때 사진을 가져가는 공개 주소 (파일명은 추측 불가능한 난수)."""
+        if not hosting.PUBLIC_NAME_RE.match(filename):
+            abort(404)
+        return send_from_directory(config.PROCESSED_DIR, filename, mimetype="image/jpeg")
 
     # ------------------------------------------------------------ 게시물 목록
     @app.get("/")
@@ -226,6 +318,41 @@ def create_app() -> Flask:
                 flash(f"답글을 달지 못했어요: {e}", "error")
         return redirect(url_for("comments"))
 
+    # ------------------------------------------------------------ 인스타 연결 (OAuth)
+    @app.post("/instagram/connect")
+    def instagram_connect():
+        redirect_uri = instagram.oauth_redirect_uri()
+        if not instagram.oauth_configured() or not redirect_uri:
+            flash("인스타 연결 설정(IG_APP_ID, IG_APP_SECRET, 공개 주소)이 아직 없어요.", "error")
+            return redirect(url_for("settings"))
+        state = secrets.token_urlsafe(24)
+        session["ig_oauth_state"] = state
+        return redirect(instagram.build_authorize_url(redirect_uri, state))
+
+    @app.get("/instagram/callback")
+    def instagram_callback():
+        if request.args.get("error"):
+            flash("인스타 연결을 취소했어요.", "error")
+            return redirect(url_for("settings"))
+        expected = session.pop("ig_oauth_state", None)
+        state = request.args.get("state", "")
+        if not expected or not hmac.compare_digest(expected, state):
+            flash("연결 요청이 만료됐어요. '인스타 연결하기'를 다시 눌러 주세요.", "error")
+            return redirect(url_for("settings"))
+        try:
+            username = instagram.connect_with_code(request.args.get("code", ""),
+                                                   instagram.oauth_redirect_uri())
+            flash(f"@{username} 계정을 연결했어요! 이제 실제로 게시돼요.", "ok")
+        except instagram.InstagramError as e:
+            flash(f"인스타 연결에 실패했어요: {e}", "error")
+        return redirect(url_for("settings"))
+
+    @app.post("/instagram/disconnect")
+    def instagram_disconnect():
+        instagram.disconnect()
+        flash("인스타 연결을 해제했어요.", "ok")
+        return redirect(url_for("settings"))
+
     # ------------------------------------------------------------ 설정
     @app.route("/settings", methods=["GET", "POST"])
     def settings():
@@ -251,9 +378,13 @@ def create_app() -> Flask:
 
         status = {
             "claude": bool(os.getenv("ANTHROPIC_API_KEY")),
-            "cloudinary": config.cloudinary_configured(),
+            "hosting": hosting.mode(),
             "ig_dry_run": instagram.is_dry_run(),
+            "ig_source": instagram.token_source(),
             "ig_username": None, "ig_error": None, "ig_limit": None,
+            "oauth_ready": instagram.oauth_configured() and bool(instagram.oauth_redirect_uri()),
+            "oauth_configured": instagram.oauth_configured(),
+            "redirect_uri": instagram.oauth_redirect_uri(),
         }
         if not status["ig_dry_run"]:
             try:
@@ -263,6 +394,6 @@ def create_app() -> Flask:
             except instagram.InstagramError as e:
                 status["ig_error"] = str(e)
         return render_template("settings.html", brand=brand, status=status,
-                               model=config.CLAUDE_MODEL)
+                               model=config.CLAUDE_MODEL, timezone=config.TIMEZONE)
 
     return app

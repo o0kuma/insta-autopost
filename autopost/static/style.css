@@ -34,7 +34,7 @@ code { background: #efece7; padding: 1px 5px; border-radius: 4px; }
 .logo { display: flex; align-items: center; gap: 8px; color: var(--text); font-weight: 700; }
 .logo-mark {
   width: 22px; height: 22px; border-radius: 7px;
-  background: radial-gradient(circle at 30% 110%, #fdc468 0 25%, #df4996 55%, #7a3ff2 100%);
+  background: linear-gradient(160deg, #e8578a, #b02457);
 }
 nav { display: flex; align-items: center; gap: 16px; }
 nav a, .logo { white-space: nowrap; }
@@ -95,7 +95,7 @@ nav .btn-primary { color: #fff; }
 .panel { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; margin-bottom: 16px; }
 .field { display: block; margin-bottom: 14px; }
 .field > span { display: block; font-weight: 600; margin-bottom: 6px; font-size: 14px; }
-input[type=text], input:not([type]), input[type=number], input[type=datetime-local], textarea, select {
+input[type=text], input:not([type]), input[type=number], input[type=password], input[type=datetime-local], textarea, select {
   width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px;
   font: inherit; background: #fff; color: var(--text);
 }
@@ -114,7 +114,7 @@ input:focus, textarea:focus, select:focus { outline: 2px solid #f3c2d4; border-c
 .editor { display: grid; grid-template-columns: minmax(280px, 380px) 1fr; gap: 24px; align-items: start; }
 .phone { background: #fff; border: 1px solid var(--line); border-radius: 18px; overflow: hidden; position: sticky; top: 76px; }
 .phone-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px; font-size: 14px; }
-.avatar { width: 28px; height: 28px; border-radius: 50%; background: radial-gradient(circle at 30% 110%, #fdc468 0 25%, #df4996 55%, #7a3ff2 100%); }
+.avatar { width: 28px; height: 28px; border-radius: 50%; background: linear-gradient(160deg, #e8578a, #b02457); }
 .slides { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; }
 .slides img { flex: 0 0 100%; width: 100%; scroll-snap-align: start; display: block; }
 .dots { display: flex; justify-content: center; gap: 4px; padding: 8px 0 0; }
@@ -137,6 +137,19 @@ input:focus, textarea:focus, select:focus { outline: 2px solid #f3c2d4; border-c
 .reply-form textarea { margin-bottom: 8px; }
 
 /* 설정 */
+.small { font-size: 13px; }
+details { margin-top: 12px; }
+details summary { cursor: pointer; color: var(--muted); }
+code.copy { display: block; padding: 8px 10px; word-break: break-all; user-select: all; }
+.logout { text-align: right; }
+.panel .actions form { margin: 0; }
+
+/* 로그인 */
+.login-page { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 16px; }
+.login-box { width: 100%; max-width: 360px; }
+.login-logo { display: flex; align-items: center; justify-content: center; gap: 8px; font-weight: 700; font-size: 18px; margin-bottom: 18px; }
+.login-box .small { text-align: center; }
+
 .status-list { list-style: none; padding: 0; margin: 0 0 12px; }
 .status-list li { padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
 .status-list b { margin-right: 6px; }

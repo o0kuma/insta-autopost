@@ -36,6 +36,7 @@
     {% endif %}
 
     <form method="post" class="panel">
+      <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
       <label class="field">
         <span>본문 <small class="muted" id="capCount"></small></span>
         <textarea name="caption" id="caption" rows="10" {{ 'readonly' if not editable }}>{{ post.caption }}</textarea>
