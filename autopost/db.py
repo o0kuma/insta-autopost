@@ -3,7 +3,9 @@ import json
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
+from . import config
 from .config import DB_PATH
 
 TIME_FMT = "%Y-%m-%dT%H:%M"  # <input type="datetime-local"> 형식과 동일
@@ -36,8 +38,13 @@ POST_FIELDS = {
 }
 
 
+def now() -> datetime:
+    """가게 시간대 기준 현재 시각 (서버가 UTC로 돌아도 '12:00 예약'이 가게 기준 12시가 되도록)."""
+    return datetime.now(ZoneInfo(config.TIMEZONE)).replace(tzinfo=None)
+
+
 def now_str() -> str:
-    return datetime.now().strftime(TIME_FMT)
+    return now().strftime(TIME_FMT)
 
 
 @contextmanager

@@ -5,6 +5,7 @@
 <p class="muted">사진과 짧은 메모만 주시면 AI가 캡션과 해시태그를 써요. 올리기 전에 꼭 확인하는 단계가 있어요.</p>
 
 <form method="post" enctype="multipart/form-data" class="panel">
+  <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
   <label class="field">
     <span>사진 (최대 {{ max_photos }}장, 여러 장이면 슬라이드로 올라가요)</span>
     <input type="file" name="photos" id="photos" accept="image/*,.heic,.heif" multiple required>

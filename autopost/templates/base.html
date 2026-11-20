@@ -4,6 +4,13 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}인스타 자동 게시{% endblock %}</title>
+  <meta name="csrf-token" content="{{ csrf_token() }}">
+  <meta name="theme-color" content="#d6336c">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="인스타 게시">
+  <link rel="manifest" href="{{ url_for('static', filename='manifest.webmanifest') }}">
+  <link rel="icon" href="{{ url_for('static', filename='icon-192.png') }}">
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='apple-touch-icon.png') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
@@ -20,7 +27,7 @@
   {% if dry_run %}
   <div class="banner">
     <strong>테스트 모드</strong> · 인스타에 실제로 올라가지 않아요.
-    <a href="{{ url_for('settings') }}">연결 방법 보기</a>
+    <a href="{{ url_for('settings') }}">인스타 연결하러 가기</a>
   </div>
   {% endif %}
 
